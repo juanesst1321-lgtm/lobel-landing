@@ -221,30 +221,50 @@ function PagoEpaycoModal({ plan, planId, precio, onClose }: { plan: string; plan
   );
 }
 
+const INITIAL_MSG = { role: "assistant" as const, content: "Hola, soy el asistente de LOBEL ERP. ¿En qué puedo ayudarte? Puedo contarte sobre planes, módulos o agendar una demo." };
+const LS_KEY = "lobel_chat_history";
+
+function loadHistory(): { role: "user" | "assistant"; content: string }[] {
+  try {
+    const raw = sessionStorage.getItem(LS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [INITIAL_MSG];
+}
+
 // ── Chat Widget ────────────────────────────────────────────────────────────
 function ChatWidget() {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
-    { role: "assistant", content: "Hola, soy el asistente de LOBEL ERP. ¿En qué puedo ayudarte? Puedo contarte sobre planes, módulos o agendar una demo." },
-  ]);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>(loadHistory);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+
+  function saveHistory(msgs: { role: "user" | "assistant"; content: string }[]) {
+    try { sessionStorage.setItem(LS_KEY, JSON.stringify(msgs)); } catch { /* ignore */ }
+  }
 
   async function enviar() {
     if (!input.trim() || loading) return;
     const userMsg = input.trim();
     setInput("");
-    setMessages(m => [...m, { role: "user", content: userMsg }]);
+    const next = [...messages, { role: "user" as const, content: userMsg }];
+    setMessages(next);
+    saveHistory(next);
     setLoading(true);
     try {
       const r = await fetch(`${API_URL}/api/v1/landing/chat`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg, history: messages }),
+        body: JSON.stringify({ message: userMsg, history: messages.slice(-10) }),
       });
       const data = await r.json();
-      setMessages(m => [...m, { role: "assistant", content: data.response || "Lo siento, intenta de nuevo." }]);
+      const reply = data.reply || "Lo siento, intenta de nuevo.";
+      const withReply = [...next, { role: "assistant" as const, content: reply }];
+      setMessages(withReply);
+      saveHistory(withReply);
     } catch {
-      setMessages(m => [...m, { role: "assistant", content: "Error de conexión. Intenta de nuevo." }]);
+      const withErr = [...next, { role: "assistant" as const, content: "Error de conexión. Intenta de nuevo." }];
+      setMessages(withErr);
+      saveHistory(withErr);
     } finally { setLoading(false); }
   }
 
@@ -301,6 +321,7 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-4">
           <a href="#planes" className="text-blue-200 text-sm hover:text-white transition-colors">Planes</a>
+          <a href="#whatsapp" className="text-blue-200 text-sm hover:text-white transition-colors">WhatsApp</a>
           <a href="#demo" className="text-blue-200 text-sm hover:text-white transition-colors">Demo</a>
           <a href={`${API_URL}/login`} className="bg-white text-[#0E2A47] text-sm font-semibold px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors">Ingresar</a>
         </div>
@@ -352,13 +373,17 @@ export default function LandingPage() {
             <h2 className="text-3xl font-black text-gray-900 mb-4">Mira LOBEL ERP en acción</h2>
             <p className="text-gray-500 text-lg">Un recorrido completo por los módulos principales en menos de 3 minutos.</p>
           </div>
-          <div className="relative bg-[#0E2A47] rounded-2xl overflow-hidden shadow-2xl aspect-video flex items-center justify-center">
-            {/* Placeholder — reemplazar src con URL S3 cuando el video esté listo */}
-            <div className="text-center text-white p-8">
-              <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">▶</div>
-              <p className="text-xl font-semibold mb-2">Demo disponible pronto</p>
-              <p className="text-blue-300">Mientras tanto, escríbenos al chat para una demo personalizada.</p>
-            </div>
+          <div className="relative bg-[#0E2A47] rounded-2xl overflow-hidden shadow-2xl aspect-video">
+            {/* src apunta al bucket S3 — reemplazar con URL real cuando el video esté subido */}
+            <video
+              src="https://lobel-assets.s3.amazonaws.com/demo/lobel-erp-demo.mp4"
+              poster="https://lobel-assets.s3.amazonaws.com/demo/lobel-erp-poster.jpg"
+              controls
+              preload="none"
+              className="w-full h-full object-cover"
+            >
+              Tu navegador no soporta video HTML5.
+            </video>
           </div>
         </div>
       </section>
@@ -431,6 +456,66 @@ export default function LandingPage() {
                 <p className="text-gray-500 text-sm leading-relaxed">{f.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* WhatsApp Business */}
+      <section id="whatsapp" className="bg-white px-6 py-20">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-green-600 font-bold text-sm uppercase tracking-widest mb-3">WhatsApp Business API</p>
+            <h2 className="text-3xl font-black text-gray-900 mb-4">Tu empresa habla con sus clientes por WhatsApp</h2>
+            <p className="text-gray-500 text-lg max-w-3xl mx-auto leading-relaxed">
+              LOBEL ERP integra la API oficial de WhatsApp Business para que cada empresa que usa la plataforma
+              se comunique con sus propios clientes desde el mismo sistema donde factura y gestiona su negocio,
+              sin apps externas ni números personales.
+            </p>
+          </div>
+
+          {/* Casos de uso */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
+            {[
+              { icon: "🧾", title: "Facturas y comprobantes", desc: "Envía la factura electrónica DIAN y su soporte al cliente apenas se emite." },
+              { icon: "💳", title: "Links de pago", desc: "Comparte enlaces de cobro para que el cliente pague desde el mismo chat." },
+              { icon: "📦", title: "Estado de pedidos", desc: "Notifica confirmación, despacho y entrega de cada pedido automáticamente." },
+              { icon: "🤖", title: "Atención con IA", desc: "Don Luis responde dudas, consulta stock y toma pedidos las 24 horas." },
+            ].map(c => (
+              <div key={c.title} className="bg-gray-50 rounded-2xl p-6 border border-gray-100">
+                <div className="text-3xl mb-3">{c.icon}</div>
+                <h3 className="font-bold text-gray-900 text-base mb-2">{c.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{c.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Cómo ayuda + uso de datos */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-[#0E2A47] rounded-2xl p-7 text-white">
+              <h3 className="font-bold text-lg mb-3">¿Cómo ayuda a tu empresa?</h3>
+              <ul className="space-y-2.5 text-sm text-blue-100">
+                {[
+                  "Centraliza la comunicación con clientes en el canal que ya usan a diario.",
+                  "Reduce llamadas y mensajes manuales: el ERP envía las notificaciones por ti.",
+                  "Acelera el cobro y mejora la atención sin contratar más personal.",
+                  "Cada mensaje queda registrado y vinculado a su factura, pedido o cliente.",
+                ].map(t => (
+                  <li key={t} className="flex items-start gap-2"><span className="text-green-400 mt-0.5 flex-shrink-0">✓</span>{t}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-green-50 rounded-2xl p-7 border border-green-100">
+              <h3 className="font-bold text-lg text-gray-900 mb-3">🔒 Uso responsable de los datos</h3>
+              <p className="text-sm text-gray-600 leading-relaxed mb-3">
+                Solo se contacta a los clientes que cada empresa registra en su propio sistema. Los datos de WhatsApp
+                (números y mensajes) se usan únicamente para entregar las notificaciones y respuestas del negocio que
+                los gestiona.
+              </p>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                LOBEL no vende ni comparte esta información con terceros. Consulta nuestra{" "}
+                <a href="/privacidad/" className="text-green-700 font-semibold underline">Política de Privacidad</a>.
+              </p>
+            </div>
           </div>
         </div>
       </section>
